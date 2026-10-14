@@ -1,6 +1,7 @@
 ﻿; VAO – Voice Auto Optimizer インストーラー（Inno Setup 6）
 ; 初心者が間違えないよう、選択肢を出さない:
-;   ようこそ → インストール → 完了（次の手順を表示）
+;   ようこそ（「インストール」を押す）→ 完了（次の手順を表示）。準備完了の画面は出ない。
+;   言語の選択は、Windows が日本語／英語なら出ない（ShowLanguageDialog=auto）。
 ; 入れ先は固定: C:\ProgramData\obs-studio\plugins\VAO
 ;   Windows 版の OBS が読むのは、この全ユーザー用の場所だけ（%APPDATA% 側は読まれない。2026-10 に実機で確認）。
 ;   ProgramData 直下には一般ユーザーでもフォルダを作れるので、管理者権限は要らない。
@@ -42,6 +43,10 @@ UsePreviousAppDir=no
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 DisableReadyPage=yes
+; 準備完了の画面は、それより前に別の画面が1つも出ていないときだけ表示される仕様。
+; ようこそ画面を出せば、準備完了の画面は出ない（Next ボタンの表示を「インストール」に変える: CurPageChanged）。
+DisableWelcomePage=no
+ShowLanguageDialog=auto
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -61,10 +66,10 @@ Name: "ja"; MessagesFile: "compiler:Languages\Japanese.isl"
 Name: "en"; MessagesFile: "compiler:Default.isl"
 
 [Messages]
-ja.WelcomeLabel2=OBS Studio の音声フィルタ「VAO Voice」を追加します。%n%n先に OBS Studio を終了してください。%n%n「次へ」を押すだけでインストールが始まります。
+ja.WelcomeLabel2=OBS Studio の音声フィルタ「VAO Voice」を追加します。%n%n先に OBS Studio を終了してください。%n%n「インストール」を押すと、インストールが始まります。
 ja.FinishedHeadingLabel=インストールが完了しました
 ja.FinishedLabelNoIcons=次の手順で使えます。%n%n1. OBS Studio を起動する%n2. マイクの音声ソースを右クリック →「フィルタ」%n3.「音声フィルタ」の「＋」から「VAO Voice」を追加する%n4.「すべて自動設定（測定する）」を押し、画面の案内に従う（約26秒）%n%n※ フィルタ名の左にある「目」のアイコンがオンになっていることを確認してください。
-en.WelcomeLabel2=This adds the audio filter "VAO Voice" to OBS Studio.%n%nPlease close OBS Studio first.%n%nJust click Next to install.
+en.WelcomeLabel2=This adds the audio filter "VAO Voice" to OBS Studio.%n%nPlease close OBS Studio first.%n%nClick Install to begin.
 en.FinishedHeadingLabel=Installation complete
 en.FinishedLabelNoIcons=How to use:%n%n1. Start OBS Studio%n2. Right-click your microphone source and choose Filters%n3. Click + under Audio Filters and add "VAO Voice"%n4. Press "Auto-set all (measures)" and follow the on-screen guide (about 26 seconds)%n%nMake sure the eye icon next to the filter name is turned on.
 
@@ -125,4 +130,11 @@ begin
       Exit;
     end;
   end;
+end;
+
+// ようこそ画面が、インストール前の最後の画面になる。「次へ」を「インストール」と表示して、迷わないようにする。
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if CurPageID = wpWelcome then
+    WizardForm.NextButton.Caption := SetupMessage(msgButtonInstall);
 end;

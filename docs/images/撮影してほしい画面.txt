@@ -1,0 +1,14 @@
+案内ページ（docs\index.html）に載せているスクリーンショットの一覧です。
+ブラウザの画面を撮るときは、タブやブックマークが写らないよう、必要な部分だけを切り抜いてください。
+
+01-releases.png            ダウンロードページの「Assets」（Setup.exe を赤枠で囲んだもの）
+03c-installer-finish.jpg   インストーラー: 完了（使い始める手順）
+04-add-filter.jpg          OBS の音声フィルタで「VAO Voice」を選ぶ
+05a-vao-dialog-top.jpg     VAO Voice の設定画面（上半分）
+05b-vao-dialog-bottom.jpg  VAO Voice の設定画面（下半分）
+06-measuring.jpg           測定中の案内表示
+
+まだ無い画像（0.2.1 のインストーラーで撮り直すと、手順がより分かりやすくなります）:
+  03-installer-welcome.jpg  インストーラーの最初の画面（「インストール」ボタンが出ているもの）
+  02-smartscreen.png        青い警告「WindowsによってPCが保護されました」（「詳細情報」→「実行」）
+撮れたら、上の名前で docs\images に置いてください。index.html に私が組み込みます。
