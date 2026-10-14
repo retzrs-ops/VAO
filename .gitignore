@@ -7,9 +7,17 @@
 !/cmake
 !/data
 !/src
+!/tests
+!/tools
+!/.claude
+!CLAUDE.md
+!CHANGELOG.md
+!Readme.txt
+!引継ぎ資料.md
 !.clang-format
 !.gersemirc
 !.gitignore
+!.gitattributes
 !buildspec.json
 !CMakeLists.txt
 !CMakePresets.json

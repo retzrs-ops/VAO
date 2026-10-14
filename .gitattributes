@@ -1,0 +1,3 @@
+# 規約: Readme.txt は LF、バッチは CRLF（SKILL.md の「ファイルの規約」）
+Readme.txt text eol=lf
+*.bat text eol=crlf
