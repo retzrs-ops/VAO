@@ -11,6 +11,7 @@ if not exist "%SRC%\VAO.dll" goto :nobuild
 
 tasklist /fi "imagename eq obs64.exe" | find /i "obs64.exe" > nul
 if not errorlevel 1 goto :obsrunning
+ver > nul
 
 if not exist "%DEST%\bin\64bit" mkdir "%DEST%\bin\64bit"
 if errorlevel 1 goto :fail
@@ -26,16 +27,20 @@ if errorlevel 1 goto :fail
 echo.
 echo 導入しました: %DEST%
 echo OBS を起動し、音声ソースのフィルタ追加で「VAO Voice」を探してください。
+pause
 exit /b 0
 
 :nobuild
 echo ビルド済みのファイルがありません。先に tools\build.bat を実行してください。
+pause
 exit /b 1
 
 :obsrunning
 echo OBS が起動中です。OBS を終了してからもう一度実行してください。
+pause
 exit /b 1
 
 :fail
 echo コピーに失敗しました。管理者として実行する必要があるかもしれません。
+pause
 exit /b 1
