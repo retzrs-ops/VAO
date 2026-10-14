@@ -1,3 +1,10 @@
-add_executable(vao-dsp-tests test_gain.cpp)
-target_link_libraries(vao-dsp-tests PRIVATE vao-dsp)
-add_test(NAME dsp_gain COMMAND vao-dsp-tests)
+function(vao_add_test name source)
+  add_executable(${name} ${source} test_util.h)
+  target_link_libraries(${name} PRIVATE vao-dsp vao-calib)
+  add_test(NAME ${name} COMMAND ${name})
+endfunction()
+
+vao_add_test(test_gain test_gain.cpp)
+vao_add_test(test_compressor test_compressor.cpp)
+vao_add_test(test_limiter test_limiter.cpp)
+vao_add_test(test_calib test_calib.cpp)

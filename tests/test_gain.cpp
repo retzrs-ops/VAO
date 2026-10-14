@@ -4,6 +4,7 @@
 // dsp/gain のテスト。OBS なしで動く。音はコードで作る（音声ファイルは使わない）。
 
 #include "dsp/gain.h"
+#include "test_util.h"
 
 #include <cmath>
 #include <cstdio>
@@ -11,23 +12,7 @@
 
 namespace {
 
-int g_pass = 0;
-int g_fail = 0;
-
-#define CHECK(cond)                                                                     \
-	do {                                                                            \
-		if (cond) {                                                             \
-			++g_pass;                                                       \
-		} else {                                                                \
-			++g_fail;                                                       \
-			std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);     \
-		}                                                                       \
-	} while (0)
-
-bool near(float a, float b, float tol)
-{
-	return std::fabs(a - b) <= tol;
-}
+using vao_test::near;
 
 // 正弦波（振幅 0.5）
 std::vector<float> make_sine(std::size_t frames, float rate, float hz = 440.0f)
@@ -168,6 +153,5 @@ int main()
 	test_mute();
 	test_channels_and_rates();
 	test_edge_cases();
-	std::printf("PASS %d / FAIL %d\n", g_pass, g_fail);
-	return g_fail == 0 ? 0 : 1;
+	return vao_test::finish();
 }

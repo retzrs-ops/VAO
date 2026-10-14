@@ -35,9 +35,13 @@ if(ENABLE_QT)
 endif()
 
 add_subdirectory(src/dsp)
-target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE vao-dsp)
+add_subdirectory(src/calib)
+target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE vao-dsp vao-calib)
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE src/obs)
-target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/plugin-main.cpp src/obs/names.h)
+target_sources(
+  ${CMAKE_PROJECT_NAME}
+  PRIVATE src/obs/plugin-main.cpp src/obs/names.h src/obs/vao_filter.cpp src/obs/vao_filter.h
+)
 
 # OBS なしで動く音声処理のテスト（ctest で実行）
 option(ENABLE_TESTS "Build DSP tests" ON)
