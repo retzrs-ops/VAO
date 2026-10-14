@@ -139,19 +139,19 @@ void test_auto_settings()
 	quiet.peak_db = -24.0f;
 
 	const CompSettings c = auto_comp(quiet);
-	CHECK(near(c.threshold_db, -42.0f, 1e-3f));
-	CHECK(near(c.ratio, 3.0f, 1e-3f));
+	CHECK(near(c.threshold_db, -44.0f, 1e-3f));
+	CHECK(near(c.ratio, 4.0f, 1e-3f));
 
 	const CompState on{true, c.threshold_db, c.ratio};
 	const float g = auto_gain_db(quiet, on, -1.0f);
-	// 平均 -38 → 減衰 (4*2/3=2.67) → -40.67 から -18 へ → +22.67 dB
-	CHECK(near(g, 22.67f, 0.05f));
-	// コンプ後のピーク: -42 + 18/3 = -36 → 上限は -1+6+36 = 41 で、制限はかからない
+	// 平均 -38 → 減衰 (6*3/4=4.5) → -42.5 から -16 へ → +26.5 dB
+	CHECK(near(g, 26.5f, 0.05f));
+	// コンプ後のピーク: -44 + 20/4 = -39 → 上限は -1+6+39 = 44 で、制限はかからない
 	CHECK(g <= kGainMaxDb);
 
-	// コンプなし: 平均をそのまま目標へ → +20 dB
+	// コンプなし: 平均をそのまま目標へ → +22 dB
 	const CompState off{false, 0.0f, 1.0f};
-	CHECK(near(auto_gain_db(quiet, off, -1.0f), 20.0f, 0.05f));
+	CHECK(near(auto_gain_db(quiet, off, -1.0f), 22.0f, 0.05f));
 
 	// 同じ入力は同じ結果
 	CHECK(auto_gain_db(quiet, on, -1.0f) == auto_gain_db(quiet, on, -1.0f));
@@ -161,7 +161,7 @@ void test_auto_settings()
 	peaky.speech_level_db = -30.0f;
 	peaky.peak_db = -3.0f;
 	const float g2 = auto_gain_db(peaky, off, -1.0f);
-	CHECK(near(g2, 8.0f, 0.05f)); // 目標は +12 dB だが、上限 -1 + 6 - (-3) = 8 dB に抑える
+	CHECK(near(g2, 8.0f, 0.05f)); // 目標は +14 dB だが、上限 -1 + 6 - (-3) = 8 dB に抑える
 	CHECK(auto_limiter_ceiling_db() == -1.0f);
 
 	// すでに大きい人はゲインを下げる（範囲内）

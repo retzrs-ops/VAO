@@ -10,8 +10,8 @@ namespace vao::calib {
 CompSettings auto_comp(const Measurement &m)
 {
 	CompSettings c;
-	c.ratio = 3.0f;
-	c.threshold_db = std::clamp(m.speech_level_db - 4.0f, -60.0f, -3.0f);
+	c.ratio = 4.0f;
+	c.threshold_db = std::clamp(m.speech_level_db - 6.0f, -60.0f, -3.0f);
 	return c;
 }
 

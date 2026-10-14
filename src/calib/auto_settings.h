@@ -10,7 +10,7 @@
 
 namespace vao::calib {
 
-constexpr float kTargetSpeechLevelDb = -18.0f; // 声の平均の目標
+constexpr float kTargetSpeechLevelDb = -16.0f; // 声の平均の目標
 constexpr float kLimiterCeilingDb = -1.0f;
 constexpr float kMaxLimiterReductionDb = 6.0f; // リミッターで潰してよい量の上限
 constexpr float kGainMinDb = -20.0f;
@@ -18,7 +18,7 @@ constexpr float kGainMaxDb = 40.0f;
 
 struct CompSettings {
 	float threshold_db = -20.0f;
-	float ratio = 3.0f;
+	float ratio = 4.0f;
 };
 
 // コンプの現在の状態（出力ゲインの計算に使う）
