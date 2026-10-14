@@ -67,6 +67,33 @@ function Package {
     }
     Compress-Archive -Force @CompressArgs
     Log-Group
+
+    # 初心者向けのインストーラー（exe）。zip を作ったあとに作る（zip に含めないため）。
+    Log-Group "Building installer for ${ProductName}..."
+    $IsccCandidates = @(
+        "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+        "${env:ProgramFiles}\Inno Setup 6\ISCC.exe",
+        "${env:LOCALAPPDATA}\Programs\Inno Setup 6\ISCC.exe"
+    )
+    $Iscc = $IsccCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if ( -not $Iscc ) {
+        Invoke-External choco install innosetup -y --no-progress
+        $Iscc = $IsccCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+    }
+    if ( -not $Iscc ) {
+        throw 'Inno Setup (ISCC.exe) was not found.'
+    }
+    $IsccArgs = @(
+        '/Qp'
+        "/DVersion=${ProductVersion}"
+        "/DStageDir=${ProjectRoot}/release/${Configuration}"
+        "/DRepoDir=${ProjectRoot}"
+        "/DOutputDir=${ProjectRoot}/release"
+        "/DOutputName=${OutputName}-Setup"
+        "${ProjectRoot}/installer/vao.iss"
+    )
+    Invoke-External $Iscc @IsccArgs
+    Log-Group
 }
 
 Package

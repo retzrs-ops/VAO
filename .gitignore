@@ -9,6 +9,7 @@
 !/src
 !/tests
 !/tools
+!/installer
 !/licenses
 !/.claude
 !CLAUDE.md
