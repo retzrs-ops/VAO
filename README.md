@@ -1,59 +1,41 @@
-# OBS Plugin Template
+# VAO – Voice Auto Optimizer
 
-## Introduction
+OBS Studio 用の音声フィルタです。**画面に出る文章を読むだけで、マイクの音量・雑音・声の聞きやすさを自動で整えます。**
+音量が小さくて聞いてもらえない配信をなくすことを、いちばんの目的にしています。
 
-The plugin template is meant to be used as a starting point for OBS Studio plugin development. It includes:
+*An audio filter for OBS Studio. Read a short script aloud and VAO automatically sets up your microphone level, noise reduction and tone. (Japanese UI; English UI texts are included.)*
 
-* Boilerplate plugin source code
-* A CMake project file
-* GitHub Actions workflows and repository actions
+## できること
 
-## Supported Build Environments
+ハイパス → AI ノイズ抑制 → ノイズゲート → EQ → コンプレッサー → ディエッサー → 出力ゲイン → リミッター の順に、
+声を整えます。各処理は個別にオン・オフでき、設定は「すべて自動設定」ボタン 1 つで決まります（約 26 秒の測定）。
 
-| Platform  | Tool   |
-|-----------|--------|
-| Windows   | Visual Studio 17 2022 |
-| macOS     | XCode 16.0 |
-| Windows, macOS  | CMake 3.30.5 |
-| Ubuntu 24.04 | CMake 3.28.3 |
-| Ubuntu 24.04 | `ninja-build` |
-| Ubuntu 24.04 | `pkg-config`
-| Ubuntu 24.04 | `build-essential` |
+- 音量が小さい声を、聞きやすい大きさまで持ち上げます（リミッターで音割れも防ぎます）
+- ファン・空調などの雑音を、AI（RNNoise 内蔵）で減らします
+- キーボードやマウスの音を測って、声がないあいだは静かにします
+- EQ は「クリア」「あたたかい」「ラジオ」など、好みの音色（味付け）を選べます
+- OBS だけで完結します。更新の通知も、外部への通信もありません
 
-## Quick Start
+## ダウンロードと使い方
 
-An absolute bare-bones [Quick Start Guide](https://github.com/obsproject/obs-plugintemplate/wiki/Quick-Start-Guide) is available in the wiki.
+1. [Releases](https://github.com/retzrs-ops/VAO/releases) から、最新の **`VAO-<版>-windows-x64-Setup.exe`** をダウンロードします。
+2. OBS Studio を終了してから、ダウンロードしたファイルをダブルクリックし、「次へ」を押します。
+   - 青い警告「WindowsによってPCが保護されました」が出たら、「詳細情報」→「実行」を押してください
+     （ソフトに電子署名が付いていないための警告です）。
+3. OBS を起動し、マイクの音声ソースを右クリック →「フィルタ」→「音声フィルタ」の「＋」から「**VAO Voice**」を追加します。
+4. 「**すべて自動設定（測定する）**」を押し、画面の案内に従います（黙る → キーボード → マウス → 文章を読む → 大きい声）。
 
-## Documentation
+くわしい使い方・設定項目・トラブルシューティングは、[Readme.txt](Readme.txt) をご覧ください
+（作った理由と設計の考え方も書いてあります）。
 
-All documentation can be found in the [Plugin Template Wiki](https://github.com/obsproject/obs-plugintemplate/wiki).
+## 動作環境
 
-Suggested reading to get up and running:
+- Windows 10 / 11（64bit）
+- OBS Studio（動作確認: 32.2.2）
+- OBS の音声サンプルレートが 48 kHz（AI ノイズ抑制は 48 kHz のときだけ動きます）
 
-* [Getting started](https://github.com/obsproject/obs-plugintemplate/wiki/Getting-Started)
-* [Build system requirements](https://github.com/obsproject/obs-plugintemplate/wiki/Build-System-Requirements)
-* [Build system options](https://github.com/obsproject/obs-plugintemplate/wiki/CMake-Build-System-Options)
+## ライセンス
 
-## GitHub Actions & CI
+[GPL-2.0 以降](LICENSE)。AI ノイズ抑制には [RNNoise](https://github.com/xiph/rnnoise)（BSD-3-Clause、[licenses](licenses)）を使っています。
 
-Default GitHub Actions workflows are available for the following repository actions:
-
-* `push`: Run for commits or tags pushed to `master` or `main` branches.
-* `pr-pull`: Run when a Pull Request has been pushed or synchronized.
-* `dispatch`: Run when triggered by the workflow dispatch in GitHub's user interface.
-* `build-project`: Builds the actual project and is triggered by other workflows.
-* `check-format`: Checks CMake and plugin source code formatting and is triggered by other workflows.
-
-The workflows make use of GitHub repository actions (contained in `.github/actions`) and build scripts (contained in `.github/scripts`) which are not needed for local development, but might need to be adjusted if additional/different steps are required to build the plugin.
-
-### Retrieving build artifacts
-
-Successful builds on GitHub Actions will produce build artifacts that can be downloaded for testing. These artifacts are commonly simple archives and will not contain package installers or installation programs.
-
-### Building a Release
-
-To create a release, an appropriately named tag needs to be pushed to the `main`/`master` branch using semantic versioning (e.g., `12.3.4`, `23.4.5-beta2`). A draft release will be created on the associated repository with generated installer packages or installation programs attached as release artifacts.
-
-## Signing and Notarizing on macOS
-
-Basic concepts of codesigning and notarization on macOS are explained in the correspodning [Wiki article](https://github.com/obsproject/obs-plugintemplate/wiki/Codesigning-On-macOS) which has a specific section for the [GitHub Actions setup](https://github.com/obsproject/obs-plugintemplate/wiki/Codesigning-On-macOS#setting-up-code-signing-for-github-actions).
+(c) 2026 Retzn
