@@ -25,8 +25,7 @@ void Compressor::prepare(float sample_rate)
 	reset();
 }
 
-void Compressor::set_params(bool enabled, float threshold_db, float ratio, float attack_ms,
-			    float release_ms)
+void Compressor::set_params(bool enabled, float threshold_db, float ratio, float attack_ms, float release_ms)
 {
 	enabled_ = enabled;
 	if (!std::isnan(threshold_db))

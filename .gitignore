@@ -9,6 +9,7 @@
 !/src
 !/tests
 !/tools
+!/licenses
 !/.claude
 !CLAUDE.md
 !CHANGELOG.md

@@ -20,7 +20,8 @@ void test_never_exceeds_ceiling()
 	for (float rate : rates) {
 		for (std::size_t nch = 1; nch <= 8; ++nch) {
 			// 大音量の正弦波（+6 dB）に、突然の巨大なピークを混ぜる
-			std::vector<std::vector<float>> bufs(nch, make_sine(static_cast<std::size_t>(rate), rate, 2.0f));
+			std::vector<std::vector<float>> bufs(nch,
+							     make_sine(static_cast<std::size_t>(rate), rate, 2.0f));
 			for (std::size_t c = 0; c < nch; ++c)
 				bufs[c][20000] = 8.0f;
 			std::vector<float *> ch(nch);

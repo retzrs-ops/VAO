@@ -31,16 +31,17 @@ VAO は Retzn さんが配布する Windows 向けの **OBS ネイティブ音�
 ## 2. 版上げの手順
 
 1. `git status` で未コミットの変更がないことを確かめる。
-2. 前の版のソースを `old\VAO_v<前の版>.zip`（中に `VAO_v<前の版>\` フォルダ）として残す。
-   `git archive --format=zip --prefix=VAO_v<前の版>/ v<前の版> -o ..\old\VAO_v<前の版>.zip`
+2. 前の版のソースを `old\VAO_v<前の版>.zip`（中に `VAO_v<前の版>\` フォルダ）として残す（タグは `<前の版>`。v は付けない）。
+   `git archive --format=zip --prefix=VAO_v<前の版>/ <前の版> -o ..\old\VAO_v<前の版>.zip`
 3. 修正する。版を上げるときは次をそろえて更新する。
    - `buildspec.json` の `version`（版番号はここが正。コードに直接書かない）
    - `CHANGELOG.md` の先頭に開発者向けの変更点（ソースファイルの先頭には書かない）
    - `Readme.txt`（利用者向け。`Version:` 行と「バージョン履歴」の先頭に追記）
    - `引継ぎ資料.md`（コードの地図・版の表・未確認/残課題・次にやること）
 4. テストに新しい動きのテストを足し、`tools\test.bat` で FAIL 0 件を確認する。
-5. コミットする。**push・タグ付け（`v<版>`）・リリース公開は Retzn さんの確認を取ってから。**
-6. タグを push したら `gh run watch` で GitHub Actions のビルド成功を確かめる。
+5. コミットする。**push・タグ付け（`<版>`、例 `0.2.0`。**先頭に v を付けない**: GitHub Actions のリリース作成が数字だけのタグを見るため）・リリース公開は Retzn さんの確認を取ってから。**
+6. タグを push したら `gh run watch` で GitHub Actions のビルド成功を確かめる。成功すると**下書き（draft）のリリース**ができる（Windows の zip／exe と CHECKSUMS 付き）。公開は Retzn さんの確認後。
+   GitHub Actions は Windows だけビルドする（macOS・Linux は `build-project.yaml` で無効化中）。
 7. Google Drive の `マイドライブ\VAO\` に、`引継ぎ資料.md`・`old\` の新しい ZIP・`release\` のインストーラーをコピーする。
 
 ## 3. ファイルの規約

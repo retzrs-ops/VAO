@@ -34,6 +34,10 @@ if(ENABLE_QT)
   )
 endif()
 
+# AI ノイズ抑制 RNNoise（OBS の部品 obs-deps に含まれる静的ライブラリ。BSD ライセンス）
+find_path(VAO_RNNOISE_INCLUDE_DIR rnnoise.h REQUIRED)
+find_library(VAO_RNNOISE_LIBRARY NAMES rnnoise REQUIRED)
+
 add_subdirectory(src/dsp)
 add_subdirectory(src/calib)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE vao-dsp vao-calib)

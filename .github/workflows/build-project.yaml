@@ -73,6 +73,7 @@ jobs:
 
   macos-build:
     name: Build for macOS 🍏
+    if: false # VAO は当面 Windows 専用（macOS は未対応・未確認）
     runs-on: macos-15
     needs: check-event
     defaults:
@@ -177,6 +178,7 @@ jobs:
 
   ubuntu-build:
     name: Build for Ubuntu 🐧
+    if: false # VAO は当面 Windows 専用（Linux は未対応。RNNoise の用意が要る）
     strategy:
       matrix:
         os: [ubuntu-24.04]

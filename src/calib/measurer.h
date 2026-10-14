@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Retzn (VAO - Voice Auto Optimizer)
 
-// 測定: 無音 → 定型文 → 一番大きい声 の 3 段階で入力を測る。OBS に依存しない。
+// 測定: 無音 → キーボード → マウス → 定型文 → 一番大きい声 の 5 段階で入力を測る。OBS に依存しない。
 // feed() だけが音声スレッドから呼ばれる（確保・ロック・ログなし）。
 // それ以外は UI 側のスレッドから呼ぶ。
 
@@ -11,21 +11,33 @@
 #include <cstddef>
 #include <vector>
 
+#include "dsp/biquad.h"
+
 namespace vao::calib {
 
 struct Measurement {
-	float noise_floor_db = -90.0f; // 部屋のノイズ（無音時の平均、dBFS）
-	float speech_level_db = -90.0f; // 声の平均（しゃべっている部分、dBFS の二乗平均）
-	float peak_db = -90.0f;        // 声と大声の最大ピーク（dBFS）
-	bool clipped = false;          // 入力の時点で音割れしている
+	float noise_floor_db = -90.0f;    // 部屋のノイズ（無音時の平均、dBFS の二乗平均）
+	float keyboard_level_db = -90.0f; // キーボードを叩く音の最大の強さ（10 ms の二乗平均、dB。ゲートと同じ測り方）
+	float mouse_level_db = -90.0f;    // マウスをクリックする音の最大の強さ（同上）
+	float speech_level_db = -90.0f;   // 声の平均（しゃべっている部分、dBFS の二乗平均）
+	float peak_db = -90.0f;           // 声と大声の最大ピーク（dBFS）
+	bool clipped = false;             // 入力の時点で音割れしている
+
+	// 声の帯域ごとの強さ（しゃべっている部分の二乗平均、dB）
+	float band_low_db = -90.0f;  // 100 Hz 付近
+	float band_mud_db = -90.0f;  // 300 Hz 付近（こもり）
+	float band_pres_db = -90.0f; // 3 kHz 付近（明瞭さ）
+	float band_sib_db = -90.0f;  // 7 kHz 付近（サ行。ディエッサーと同じ帯域）
 };
 
 class Measurer {
 public:
-	enum class Phase : int { Idle, Starting, Silence, Speech, Loud, Done, Failed };
+	enum class Phase : int { Idle, Starting, Silence, Keyboard, Mouse, Speech, Loud, Done, Failed };
 
 	// 各段階の長さ（秒）。画面の案内にも使う。
 	static constexpr int kSilenceSec = 3;
+	static constexpr int kKeyboardSec = 4;
+	static constexpr int kMouseSec = 3;
 	static constexpr int kSpeechSec = 12;
 	static constexpr int kLoudSec = 4;
 
@@ -44,6 +56,7 @@ public:
 	bool compute(Measurement &out);
 
 private:
+	static constexpr int kBands = 4;
 	static constexpr float kBlockSec = 0.05f;
 	static constexpr int kSilenceSkipBlocks = 10; // 最初の 0.5 秒は使わない
 	static constexpr int kActiveMarginDb = 10;
@@ -55,16 +68,22 @@ private:
 	std::atomic<Phase> phase_{Phase::Idle};
 	std::atomic<int> block_in_phase_{0};
 	float sample_rate_ = 48000.0f;
+	double det_k_ = 0.0;
 	std::size_t block_len_ = 2400;
 
 	// 以下は音声スレッドが書く（Done になるまで UI 側は読まない）
 	std::size_t frames_in_block_ = 0;
 	double sum_sq_ = 0.0;
+	double band_sq_[kBands] = {};
 	float block_peak_ = 0.0f;
 	int clip_run_ = 0;
 	bool clipped_ = false;
+	vao::dsp::Biquad band_filter_[kBands];
 	std::vector<float> power_; // ブロックごとの二乗平均
 	std::vector<float> peak_;
+	double det_power_ = 0.0;        // 10 ms の二乗平均（ゲートと同じ検出）
+	double click_max_[2] = {};      // キーボード・マウスの段階での検出値の最大
+	std::vector<float> band_power_; // ブロックごと・帯域ごとの二乗平均（kBands 個ずつ）
 	std::size_t stored_ = 0;
 };
 
