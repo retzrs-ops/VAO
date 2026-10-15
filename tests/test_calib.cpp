@@ -80,6 +80,10 @@ void test_measurement()
 			CHECK(near(r.noise_floor_db, -65.0f, 2.0f));
 			// 正弦波 0.05 → 二乗平均 0.05^2/2 → 約 -29 dB
 			CHECK(near(r.speech_level_db, -29.0f, 1.5f));
+			// ラウドネス: -0.691 + チャンネル数ぶんの足し合わせ(10*log10(n)) + K 特性（220 Hz ではほぼ 0 dB）
+			const float expected_lufs =
+				-29.03f - 0.691f + 10.0f * std::log10(static_cast<float>(nch)) + 0.07f;
+			CHECK(near(r.speech_lufs, expected_lufs, 0.7f));
 			CHECK(near(r.peak_db, to_db(0.4f), 1.0f));
 			CHECK(!r.clipped);
 			// 220 Hz の声は、こもり(300 Hz)の帯域が明瞭さ(3 kHz)の帯域よりずっと強い
@@ -182,6 +186,7 @@ void test_auto_settings()
 	Measurement quiet; // 音量が小さい配信者
 	quiet.noise_floor_db = -60.0f;
 	quiet.speech_level_db = -38.0f;
+	quiet.speech_lufs = -35.0f; // ステレオ（2 チャンネル）なので、二乗平均より 3 dB 大きい
 	quiet.peak_db = -24.0f;
 
 	const CompSettings c = auto_comp(quiet);
@@ -190,14 +195,16 @@ void test_auto_settings()
 
 	const CompState on{true, c.threshold_db, c.ratio};
 	const float g = auto_gain_db(quiet, on, -1.0f);
-	// 平均 -38 → 減衰 (6*3/4=4.5) → -42.5 から -16 へ → +26.5 dB
-	CHECK(near(g, 26.5f, 0.05f));
+	// ラウドネス -35 LUFS → 減衰 (6*3/4=4.5) → -39.5 LUFS から -18 LUFS へ → +21.5 dB
+	CHECK(near(g, 21.5f, 0.05f));
+	// ゲーム配信向けの -14 LUFS を目標にすると、+4 dB 多い
+	CHECK(near(auto_gain_db(quiet, on, -1.0f, -14.0f), 25.5f, 0.05f));
 	// コンプ後のピーク: -44 + 20/4 = -39 → 上限は -1+6+39 = 44 で、制限はかからない
 	CHECK(g <= kGainMaxDb);
 
-	// コンプなし: 平均をそのまま目標へ → +22 dB
+	// コンプなし: -35 LUFS をそのまま -18 LUFS へ → +17 dB
 	const CompState off{false, 0.0f, 1.0f};
-	CHECK(near(auto_gain_db(quiet, off, -1.0f), 22.0f, 0.05f));
+	CHECK(near(auto_gain_db(quiet, off, -1.0f), 17.0f, 0.05f));
 
 	// 同じ入力は同じ結果
 	CHECK(auto_gain_db(quiet, on, -1.0f) == auto_gain_db(quiet, on, -1.0f));
@@ -205,14 +212,16 @@ void test_auto_settings()
 	// ピークが大きい人は、潰れすぎないようゲインを抑える
 	Measurement peaky;
 	peaky.speech_level_db = -30.0f;
+	peaky.speech_lufs = -27.0f;
 	peaky.peak_db = -3.0f;
 	const float g2 = auto_gain_db(peaky, off, -1.0f);
-	CHECK(near(g2, 8.0f, 0.05f)); // 目標は +14 dB だが、上限 -1 + 6 - (-3) = 8 dB に抑える
+	CHECK(near(g2, 8.0f, 0.05f)); // 目標は +9 dB だが、上限 -1 + 6 - (-3) = 8 dB に抑える
 	CHECK(auto_limiter_ceiling_db() == -1.0f);
 
 	// すでに大きい人はゲインを下げる（範囲内）
 	Measurement loud;
 	loud.speech_level_db = -8.0f;
+	loud.speech_lufs = -5.0f;
 	loud.peak_db = -2.0f;
 	CHECK(auto_gain_db(loud, off, -1.0f) < 0.0f);
 	CHECK(auto_gain_db(loud, off, -1.0f) >= kGainMinDb);
@@ -255,6 +264,7 @@ void test_auto_filters()
 
 	// ノイズ抑制の強さ: 静かな部屋は弱め、うるさい部屋は強め
 	Measurement quiet_room;
+	quiet_room.speech_level_db = -29.0f;
 	quiet_room.noise_floor_db = -80.0f;
 	CHECK(near(auto_denoise_percent(quiet_room), 50.0f, 1e-3f));
 	quiet_room.noise_floor_db = -65.0f;
@@ -302,6 +312,58 @@ void test_auto_filters()
 	CHECK(auto_deesser_threshold_db(s) >= -70.0f);
 }
 
+void test_input_gain()
+{
+	// 声が小さい人: 平均 -38 → -20 に合わせて +18 dB（ピーク -24 → -6 で、上限 -1 に収まる）
+	Measurement quiet;
+	quiet.noise_floor_db = -60.0f;
+	quiet.speech_level_db = -38.0f;
+	quiet.peak_db = -24.0f;
+	CHECK(near(auto_input_gain_db(quiet), 18.0f, 1e-3f));
+
+	// ピークが大きい人: 目標は +10 dB だが、ピークが -1 dB を超えない +5 dB に抑える
+	Measurement peaky;
+	peaky.speech_level_db = -30.0f;
+	peaky.peak_db = -6.0f;
+	CHECK(near(auto_input_gain_db(peaky), 5.0f, 1e-3f));
+
+	// すでに大きい人: 下げる（下限 -12 dB まで）
+	Measurement loud;
+	loud.speech_level_db = -8.0f;
+	loud.peak_db = -2.0f;
+	CHECK(near(auto_input_gain_db(loud), -12.0f, 1e-3f));
+
+	// 極端に小さい人: 上限 +40 dB
+	Measurement tiny;
+	tiny.speech_level_db = -60.0f;
+	tiny.peak_db = -50.0f;
+	CHECK(near(auto_input_gain_db(tiny), 40.0f, 1e-3f));
+
+	// 大きさの値をずらす。音割れの印は変わらない
+	Measurement shifted = shift_levels(quiet, 18.0f);
+	CHECK(near(shifted.noise_floor_db, -42.0f, 1e-3f));
+	CHECK(near(shifted.speech_level_db, -20.0f, 1e-3f));
+	CHECK(near(shifted.peak_db, -6.0f, 1e-3f));
+	quiet.speech_lufs = -35.0f;
+	CHECK(near(shift_levels(quiet, 18.0f).speech_lufs, -17.0f, 1e-3f));
+	Measurement clipped = quiet;
+	clipped.clipped = true;
+	CHECK(shift_levels(clipped, 5.0f).clipped);
+
+	// ずらしても、声と雑音の差で決まるもの（ノイズ抑制の強さ・クリックの判定）は変わらない
+	CHECK(near(auto_denoise_percent(shifted), auto_denoise_percent(quiet), 1e-3f));
+	// ゲートのしきい値は、ずらした分だけ動く（雑音 -60・声 -38 → -50。ずらすと -32）
+	CHECK(near(auto_gate_threshold_db(quiet), -50.0f, 1e-3f));
+	CHECK(near(auto_gate_threshold_db(shifted), -32.0f, 1e-3f));
+
+	// 声がとても小さいときは、マイク側の音量を上げるよう案内する
+	Measurement low;
+	low.speech_level_db = -45.0f;
+	CHECK(input_too_quiet(low));
+	low.speech_level_db = -30.0f;
+	CHECK(!input_too_quiet(low));
+}
+
 void test_measured_bands_follow_voice()
 {
 	// 3 kHz の声: 明瞭さの帯域が強い → EQ はこもりを抜かず、高域を少し抑える
@@ -334,6 +396,7 @@ int main()
 	test_restart_and_cancel();
 	test_auto_settings();
 	test_auto_filters();
+	test_input_gain();
 	test_measured_bands_follow_voice();
 	return vao_test::finish();
 }

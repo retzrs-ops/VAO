@@ -15,7 +15,7 @@ CompSettings auto_comp(const Measurement &m)
 	return c;
 }
 
-float auto_gain_db(const Measurement &m, const CompState &comp, float limiter_ceiling_db)
+float auto_gain_db(const Measurement &m, const CompState &comp, float limiter_ceiling_db, float target_lufs)
 {
 	float avg_reduction = 0.0f;
 	float peak_after = m.peak_db;
@@ -26,7 +26,7 @@ float auto_gain_db(const Measurement &m, const CompState &comp, float limiter_ce
 			peak_after = comp.threshold_db + (m.peak_db - comp.threshold_db) / comp.ratio;
 	}
 
-	float gain = kTargetSpeechLevelDb - (m.speech_level_db - avg_reduction);
+	float gain = target_lufs - (m.speech_lufs - avg_reduction);
 	// 大声のピークがリミッターで潰れすぎない範囲に抑える
 	gain = std::min(gain, limiter_ceiling_db + kMaxLimiterReductionDb - peak_after);
 	return std::clamp(gain, kGainMinDb, kGainMaxDb);
@@ -35,6 +35,34 @@ float auto_gain_db(const Measurement &m, const CompState &comp, float limiter_ce
 float auto_limiter_ceiling_db()
 {
 	return kLimiterCeilingDb;
+}
+
+float auto_input_gain_db(const Measurement &m)
+{
+	float gain = kInputTargetLevelDb - m.speech_level_db;
+	gain = std::min(gain, kInputPeakCeilingDb - m.peak_db);
+	return std::clamp(gain, kInputGainMinDb, kInputGainMaxDb);
+}
+
+Measurement shift_levels(const Measurement &m, float gain_db)
+{
+	Measurement r = m;
+	r.noise_floor_db += gain_db;
+	r.keyboard_level_db += gain_db;
+	r.mouse_level_db += gain_db;
+	r.speech_level_db += gain_db;
+	r.speech_lufs += gain_db;
+	r.peak_db += gain_db;
+	r.band_low_db += gain_db;
+	r.band_mud_db += gain_db;
+	r.band_pres_db += gain_db;
+	r.band_sib_db += gain_db;
+	return r;
+}
+
+bool input_too_quiet(const Measurement &m)
+{
+	return m.speech_level_db < kQuietInputDb;
 }
 
 float auto_highpass_hz()
@@ -76,10 +104,12 @@ float auto_gate_threshold_db(const Measurement &m)
 
 float auto_denoise_percent(const Measurement &m)
 {
-	// ノイズ -75 dB で 50%、-50 dB 以上で 100%。キーボード・マウスの音が出る環境では 100%
+	// 声と雑音の差（S/N 比）で決める。差が 46 dB で 50%、25 dB 以下で 100%（入力ゲインの影響を受けない）。
+	// キーボード・マウスの音が出る環境では 100%。
 	if (clicks_present(m))
 		return 100.0f;
-	return std::clamp(50.0f + (m.noise_floor_db + 75.0f) * 2.0f, 50.0f, 100.0f);
+	const float snr = m.speech_level_db - m.noise_floor_db;
+	return std::clamp(50.0f + (46.0f - snr) * 2.0f, 50.0f, 100.0f);
 }
 
 vao::dsp::EqGains auto_eq(const Measurement &m, const vao::dsp::EqGains &preset)

@@ -13,6 +13,8 @@
 
 // 設定キー
 #define VAO_KEY_STATUS "status"
+#define VAO_KEY_IN_GAIN_ON "in_gain_on"
+#define VAO_KEY_IN_GAIN_DB "in_gain_db"
 #define VAO_KEY_HPF_ON "hpf_on"
 #define VAO_KEY_HPF_FREQ "hpf_freq_hz"
 #define VAO_KEY_NR_ON "nr_on"
@@ -55,6 +57,7 @@
 #define VAO_TEXT_STATUS_CLIPPED "StatusClipped"
 #define VAO_TEXT_STATUS_DISABLED "StatusDisabled"
 #define VAO_TEXT_STATUS_NO_AUDIO "StatusNoAudio"
+#define VAO_TEXT_STATUS_LOW_INPUT "StatusLowInput"
 #define VAO_TEXT_PHRASE "Phrase"
 #define VAO_TEXT_AUTO_ALL "AutoAll"
 #define VAO_TEXT_COMP "Compressor"
@@ -64,6 +67,8 @@
 #define VAO_TEXT_GAIN_DB "GainDb"
 #define VAO_TEXT_LIMITER "Limiter"
 #define VAO_TEXT_LIM_CEILING "LimCeiling"
+#define VAO_TEXT_IN_GAIN "InputGain"
+#define VAO_TEXT_IN_GAIN_DB "InGainDb"
 #define VAO_TEXT_HPF "HighPass"
 #define VAO_TEXT_HPF_FREQ "HpfFreq"
 #define VAO_TEXT_NR "NoiseReduction"

@@ -7,6 +7,7 @@
 #include <cmath>
 
 #include "dsp/deesser.h"
+#include "dsp/loudness.h"
 
 namespace vao::calib {
 
@@ -49,6 +50,7 @@ void Measurer::prepare(float sample_rate)
 	power_.assign(total, 0.0f);
 	peak_.assign(total, 0.0f);
 	band_power_.assign(total * kBands, 0.0f);
+	kpower_.assign(total, 0.0f);
 	det_k_ = 1.0 - std::exp(-1.0 / (0.010 * static_cast<double>(sample_rate_)));
 
 	// 帯域: 低域 100 Hz / こもり 300 Hz / 明瞭さ 3 kHz / サ行（ディエッサーと同じ）
@@ -57,6 +59,12 @@ void Measurer::prepare(float sample_rate)
 	band_filter_[1].set_coefs(vao::dsp::biquad_bandpass(fs, 300.0, 1.0));
 	band_filter_[2].set_coefs(vao::dsp::biquad_bandpass(fs, 3000.0, 1.0));
 	band_filter_[3].set_coefs(vao::dsp::biquad_bandpass(fs, vao::dsp::kDeesserFreqHz, vao::dsp::kDeesserQ));
+
+	// ラウドネス（LUFS）用の K 特性
+	for (std::size_t c = 0; c < vao::dsp::kBiquadMaxChannels; ++c) {
+		k_pre_[c].set_coefs(vao::dsp::kweight_prefilter(fs));
+		k_rlb_[c].set_coefs(vao::dsp::kweight_rlb(fs));
+	}
 	phase_.store(Phase::Idle, std::memory_order_release);
 }
 
@@ -105,6 +113,11 @@ void Measurer::feed(const float *const *channels, std::size_t num_channels, std:
 		clip_run_ = 0;
 		clipped_ = false;
 		det_power_ = 0.0;
+		k_sq_ = 0.0;
+		for (std::size_t c = 0; c < vao::dsp::kBiquadMaxChannels; ++c) {
+			k_pre_[c].reset();
+			k_rlb_[c].reset();
+		}
 		click_max_[0] = click_max_[1] = 0.0;
 		stored_ = 0;
 		block_in_phase_.store(0, std::memory_order_release);
@@ -130,6 +143,17 @@ void Measurer::feed(const float *const *channels, std::size_t num_channels, std:
 		if (used == 0)
 			continue;
 		sum_sq_ += sq / static_cast<double>(used);
+
+		// ラウドネス（ITU-R BS.1770）: K 特性をかけた音の二乗を、チャンネルごとに足す（平均しない）
+		double k_sum = 0.0;
+		for (std::size_t c = 0; c < num_channels && c < vao::dsp::kBiquadMaxChannels; ++c) {
+			if (channels[c] == nullptr)
+				continue;
+			const float kw = k_rlb_[c].process(k_pre_[c].process(channels[c][i]));
+			k_sum += static_cast<double>(kw) * static_cast<double>(kw);
+		}
+		k_sq_ += k_sum;
+
 		const float mono_x = static_cast<float>(mono / static_cast<double>(used));
 		for (int b = 0; b < kBands; ++b) {
 			const double y = band_filter_[b].process(mono_x);
@@ -166,6 +190,7 @@ void Measurer::feed(const float *const *channels, std::size_t num_channels, std:
 		// ブロック完了
 		if (stored_ < power_.size()) {
 			power_[stored_] = static_cast<float>(sum_sq_ / static_cast<double>(block_len_));
+			kpower_[stored_] = static_cast<float>(k_sq_ / static_cast<double>(block_len_));
 			peak_[stored_] = block_peak_;
 			for (int b = 0; b < kBands; ++b)
 				band_power_[stored_ * kBands + static_cast<std::size_t>(b)] =
@@ -176,6 +201,7 @@ void Measurer::feed(const float *const *channels, std::size_t num_channels, std:
 		sum_sq_ = 0.0;
 		for (int b = 0; b < kBands; ++b)
 			band_sq_[b] = 0.0;
+		k_sq_ = 0.0;
 		block_peak_ = 0.0f;
 
 		const int done = block_in_phase_.load(std::memory_order_relaxed) + 1;
@@ -229,6 +255,7 @@ bool Measurer::compute(Measurement &out)
 	// 部屋が極端に静かでも、しきい値は -65 dB より下げない
 	const float active_db = std::max(noise_db, -65.0f) + static_cast<float>(kActiveMarginDb);
 	double active_sum = 0.0;
+	double k_active_sum = 0.0;
 	double band_sum[kBands] = {};
 	int active = 0;
 	float peak = 0.0f;
@@ -236,6 +263,7 @@ bool Measurer::compute(Measurement &out)
 		peak = std::max(peak, peak_[i]);
 		if (to_db_power(power_[i]) > active_db) {
 			active_sum += power_[i];
+			k_active_sum += kpower_[i];
 			for (int b = 0; b < kBands; ++b)
 				band_sum[b] += band_power_[i * kBands + static_cast<std::size_t>(b)];
 			++active;
@@ -253,6 +281,7 @@ bool Measurer::compute(Measurement &out)
 	out.keyboard_level_db = to_db_power(click_max_[0]);
 	out.mouse_level_db = to_db_power(click_max_[1]);
 	out.speech_level_db = to_db_power(active_sum / static_cast<double>(active));
+	out.speech_lufs = vao::dsp::kLufsOffsetDb + to_db_power(k_active_sum / static_cast<double>(active));
 	out.peak_db = 20.0f * std::log10(peak + 1e-9f);
 	out.clipped = clipped_;
 	const double n = static_cast<double>(active);

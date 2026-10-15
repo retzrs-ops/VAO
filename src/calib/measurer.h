@@ -20,8 +20,10 @@ struct Measurement {
 	float keyboard_level_db = -90.0f; // キーボードを叩く音の最大の強さ（10 ms の二乗平均、dB。ゲートと同じ測り方）
 	float mouse_level_db = -90.0f;    // マウスをクリックする音の最大の強さ（同上）
 	float speech_level_db = -90.0f;   // 声の平均（しゃべっている部分、dBFS の二乗平均）
-	float peak_db = -90.0f;           // 声と大声の最大ピーク（dBFS）
-	bool clipped = false;             // 入力の時点で音割れしている
+	float speech_lufs =
+		-90.0f;         // 声の平均のラウドネス（LUFS。K 特性・チャンネルを足し合わせ・無音を除く簡易ゲート）
+	float peak_db = -90.0f; // 声と大声の最大ピーク（dBFS）
+	bool clipped = false;   // 入力の時点で音割れしている
 
 	// 声の帯域ごとの強さ（しゃべっている部分の二乗平均、dB）
 	float band_low_db = -90.0f;  // 100 Hz 付近
@@ -79,8 +81,12 @@ private:
 	int clip_run_ = 0;
 	bool clipped_ = false;
 	vao::dsp::Biquad band_filter_[kBands];
-	std::vector<float> power_; // ブロックごとの二乗平均
+	vao::dsp::Biquad k_pre_[vao::dsp::kBiquadMaxChannels]; // K 特性: ① 高域を持ち上げる
+	vao::dsp::Biquad k_rlb_[vao::dsp::kBiquadMaxChannels]; // K 特性: ② 低域を切る
+	double k_sq_ = 0.0;                                    // ブロック内の K 特性の二乗の合計（チャンネルは足す）
+	std::vector<float> power_;                             // ブロックごとの二乗平均
 	std::vector<float> peak_;
+	std::vector<float> kpower_;     // ブロックごとの K 特性の二乗平均（チャンネルの合計）
 	double det_power_ = 0.0;        // 10 ms の二乗平均（ゲートと同じ検出）
 	double click_max_[2] = {};      // キーボード・マウスの段階での検出値の最大
 	std::vector<float> band_power_; // ブロックごと・帯域ごとの二乗平均（kBands 個ずつ）

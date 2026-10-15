@@ -11,12 +11,19 @@
 
 namespace vao::calib {
 
-constexpr float kTargetSpeechLevelDb = -16.0f; // 声の平均の目標
+constexpr float kTargetLufs = -18.0f; // 仕上がりの声の平均のラウドネス（LUFS）。雑談配信向けの目安
 constexpr float kLimiterCeilingDb = -1.0f;
 constexpr float kMaxLimiterReductionDb = 6.0f; // リミッターで潰してよい量の上限
 constexpr float kGainMinDb = -20.0f;
 constexpr float kGainMaxDb = 40.0f;
 constexpr float kHighPassHz = 80.0f;
+
+// 入力ゲイン（チェーンの先頭）。声の平均をこの大きさにそろえてから、後ろの処理に渡す。
+constexpr float kInputTargetLevelDb = -20.0f;
+constexpr float kInputPeakCeilingDb = -1.0f; // 入力ゲイン後のピークがこれを超えないようにする
+constexpr float kInputGainMinDb = -12.0f;
+constexpr float kInputGainMaxDb = 40.0f;
+constexpr float kQuietInputDb = -40.0f; // 声の平均がこれより小さければ、マイク側の音量を上げるよう案内する
 
 struct CompSettings {
 	float threshold_db = -20.0f;
@@ -32,10 +39,22 @@ struct CompState {
 
 CompSettings auto_comp(const Measurement &m);
 
-// 出力ゲイン(dB)。コンプ後の声の平均を目標に合わせる。リミッターで潰れすぎない範囲に抑える。
-float auto_gain_db(const Measurement &m, const CompState &comp, float limiter_ceiling_db);
+// 出力ゲイン(dB)。コンプのあとの声の平均ラウドネスを target_lufs（既定 -18 LUFS）に合わせる。
+// リミッターで潰れすぎない範囲に抑える。
+float auto_gain_db(const Measurement &m, const CompState &comp, float limiter_ceiling_db,
+		   float target_lufs = kTargetLufs);
 
 float auto_limiter_ceiling_db();
+
+// 入力ゲイン(dB)。声の平均を kInputTargetLevelDb にそろえる。ピークが上限を超えない範囲に抑える。
+float auto_input_gain_db(const Measurement &m);
+
+// 測定値のうち「大きさ」を表す値（ノイズ・声・ピーク・帯域など）を、gain_db だけずらす。
+// 入力ゲインを通ったあとの大きさで、後ろの処理の自動設定を計算するために使う。
+Measurement shift_levels(const Measurement &m, float gain_db);
+
+// 声がとても小さい（マイク側の音量を先に上げたほうがよい）か
+bool input_too_quiet(const Measurement &m);
 
 float auto_highpass_hz();
 
@@ -49,7 +68,7 @@ bool clicks_near_voice(const Measurement &m);
 // （ただし声の平均 - 8 dB まで）。
 float auto_gate_threshold_db(const Measurement &m);
 
-// AI ノイズ抑制の強さ(%)。部屋のノイズが大きいほど強くする（50〜100）。
+// AI ノイズ抑制の強さ(%)。声に対して雑音が大きいほど強くする（50〜100）。
 float auto_denoise_percent(const Measurement &m);
 
 // EQ。声の帯域のバランスから補正を決め、選んだプリセットの味付けを足す。

@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Retzn (VAO - Voice Auto Optimizer)
 
 // OBS 音声フィルタ「VAO Voice」。OBS との境目だけを書く。音声処理の中身は dsp、測定と自動設定は calib。
-// 処理の順番: ハイパス → AI ノイズ抑制 → ノイズゲート → EQ → コンプ → ディエッサー → 出力ゲイン → リミッター（最後は必ずリミッター）。
+// 処理の順番: 入力ゲイン → ハイパス → AI ノイズ抑制 → ノイズゲート → EQ → コンプ → ディエッサー → 出力ゲイン → リミッター（最後は必ずリミッター）。
 
 #include "vao_filter.h"
 
@@ -37,6 +37,7 @@ struct vao_filter {
 	obs_source_t *source = nullptr;
 
 	// 設定（UI 側が書き、音声スレッドが読む）
+	std::atomic<bool> in_gain_on{false};
 	std::atomic<bool> hpf_on{false};
 	std::atomic<bool> nr_on{false};
 	std::atomic<bool> gate_on{false};
@@ -45,6 +46,7 @@ struct vao_filter {
 	std::atomic<bool> deess_on{false};
 	std::atomic<bool> gain_on{true};
 	std::atomic<bool> lim_on{true};
+	std::atomic<float> in_gain_db{0.0f};
 	std::atomic<float> hpf_freq_hz{80.0f};
 	std::atomic<float> nr_strength_pct{100.0f};
 	std::atomic<float> gate_threshold_db{-50.0f};
@@ -59,6 +61,7 @@ struct vao_filter {
 	std::atomic<float> lim_ceiling_db{-1.0f};
 
 	// 音声スレッドだけが触る
+	vao::dsp::Gain in_gain;
 	vao::dsp::HighPass hpf;
 	vao::dsp::Denoiser denoiser;
 	vao::dsp::NoiseGate gate;
@@ -136,7 +139,14 @@ void apply_auto_settings(vao_filter *f)
 		m = f->last;
 	}
 
+	// まず入力ゲインを決め、以降は「入力ゲインを通ったあとの大きさ」で、ほかの処理を計算する
+	const float in_gain = vao::calib::auto_input_gain_db(m);
+	m = vao::calib::shift_levels(m, in_gain);
+
 	obs_data_t *s = obs_source_get_settings(f->source);
+
+	obs_data_set_bool(s, VAO_KEY_IN_GAIN_ON, true);
+	obs_data_set_double(s, VAO_KEY_IN_GAIN_DB, in_gain);
 
 	obs_data_set_bool(s, VAO_KEY_HPF_ON, true);
 	obs_data_set_double(s, VAO_KEY_HPF_FREQ, vao::calib::auto_highpass_hz());
@@ -211,6 +221,10 @@ void finish_measurement(vao_filter *f)
 	if (vao::calib::clicks_near_voice(m)) {
 		text += "\n";
 		text += obs_module_text(VAO_TEXT_STATUS_CLICKS_LOUD);
+	}
+	if (vao::calib::input_too_quiet(m)) {
+		text += "\n";
+		text += obs_module_text(VAO_TEXT_STATUS_LOW_INPUT);
 	}
 	set_status(f, text);
 }
@@ -303,6 +317,8 @@ const char *vao_get_name(void *)
 void vao_update(void *data, obs_data_t *s)
 {
 	auto *f = static_cast<vao_filter *>(data);
+	f->in_gain_on = obs_data_get_bool(s, VAO_KEY_IN_GAIN_ON);
+	f->in_gain_db = static_cast<float>(obs_data_get_double(s, VAO_KEY_IN_GAIN_DB));
 	f->hpf_on = obs_data_get_bool(s, VAO_KEY_HPF_ON);
 	f->hpf_freq_hz = static_cast<float>(obs_data_get_double(s, VAO_KEY_HPF_FREQ));
 	f->nr_on = obs_data_get_bool(s, VAO_KEY_NR_ON);
@@ -328,6 +344,8 @@ void vao_update(void *data, obs_data_t *s)
 void vao_defaults(obs_data_t *s)
 {
 	obs_data_set_default_string(s, VAO_KEY_STATUS, "");
+	obs_data_set_default_bool(s, VAO_KEY_IN_GAIN_ON, false);
+	obs_data_set_default_double(s, VAO_KEY_IN_GAIN_DB, 0.0);
 	obs_data_set_default_bool(s, VAO_KEY_HPF_ON, false);
 	obs_data_set_default_double(s, VAO_KEY_HPF_FREQ, 80.0);
 	obs_data_set_default_bool(s, VAO_KEY_NR_ON, false);
@@ -418,6 +436,11 @@ obs_properties_t *vao_properties(void *data)
 	obs_properties_add_button(props, VAO_BTN_AUTO_ALL, obs_module_text(VAO_TEXT_AUTO_ALL), cb_auto_all);
 
 	// 各グループの見出しのチェックボックスがオンオフ。並びは処理の順番。
+	obs_properties_t *ingain = obs_properties_create_param(data, nullptr);
+	add_db_slider(ingain, VAO_KEY_IN_GAIN_DB, VAO_TEXT_IN_GAIN_DB, -20.0, 40.0, 0.5);
+	obs_properties_add_group(props, VAO_KEY_IN_GAIN_ON, obs_module_text(VAO_TEXT_IN_GAIN), OBS_GROUP_CHECKABLE,
+				 ingain);
+
 	obs_properties_t *hpf = obs_properties_create_param(data, nullptr);
 	obs_property_t *p = obs_properties_add_float_slider(hpf, VAO_KEY_HPF_FREQ, obs_module_text(VAO_TEXT_HPF_FREQ),
 							    40.0, 200.0, 1.0);
@@ -487,6 +510,9 @@ obs_audio_data *vao_filter_audio(void *data, obs_audio_data *audio)
 		return audio;
 
 	f->meas.feed(planes, nch, frames); // 測るのは加工する前の音
+
+	f->in_gain.set_gain_db(f->in_gain_on.load() ? f->in_gain_db.load() : 0.0f);
+	f->in_gain.process(planes, nch, frames);
 
 	f->hpf.set_params(f->hpf_on.load(), f->hpf_freq_hz.load());
 	f->hpf.process(planes, nch, frames);

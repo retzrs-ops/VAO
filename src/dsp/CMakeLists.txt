@@ -19,6 +19,8 @@ add_library(
   highpass.h
   limiter.cpp
   limiter.h
+  loudness.cpp
+  loudness.h
 )
 # 呼び出し側は #include "dsp/gain.h" と書く
 target_include_directories(vao-dsp PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
