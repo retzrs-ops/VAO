@@ -11,8 +11,11 @@
 
 namespace vao::calib {
 
-constexpr float kTargetLufs = -18.0f; // 仕上がりの声の平均のラウドネス（LUFS）。雑談配信向けの目安
-constexpr float kLimiterCeilingDb = -1.0f;
+constexpr float kTargetLufs = -18.0f; // 仕上がりの声の平均のラウドネス（LUFS）の標準。雑談配信向けの目安
+constexpr float kTargetLufsMin =
+	-18.0f; // 画面のスライダーの範囲: -18（雑談配信向け）〜 -14（ゲーム配信向け）、1 dB 刻み
+constexpr float kTargetLufsMax = -14.0f;
+constexpr float kLimiterCeilingDb = -3.0f;     // リミッターの基準の上限（dBFS）。Retzn さんの指定
 constexpr float kMaxLimiterReductionDb = 6.0f; // リミッターで潰してよい量の上限
 constexpr float kGainMinDb = -20.0f;
 constexpr float kGainMaxDb = 40.0f;
@@ -41,8 +44,12 @@ CompSettings auto_comp(const Measurement &m);
 
 // 出力ゲイン(dB)。コンプのあとの声の平均ラウドネスを target_lufs（既定 -18 LUFS）に合わせる。
 // リミッターで潰れすぎない範囲に抑える。
+// capped を渡すと、音割れ防止のため目標まで上げられなかったとき true になる。
 float auto_gain_db(const Measurement &m, const CompState &comp, float limiter_ceiling_db,
-		   float target_lufs = kTargetLufs);
+		   float target_lufs = kTargetLufs, bool *capped = nullptr);
+
+// 目標の音量(LUFS)を、スライダーの範囲に収める。数値でなければ標準（-18）。
+float clamp_target_lufs(float target_lufs);
 
 float auto_limiter_ceiling_db();
 

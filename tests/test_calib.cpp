@@ -215,8 +215,10 @@ void test_auto_settings()
 	peaky.speech_lufs = -27.0f;
 	peaky.peak_db = -3.0f;
 	const float g2 = auto_gain_db(peaky, off, -1.0f);
-	CHECK(near(g2, 8.0f, 0.05f)); // 目標は +9 dB だが、上限 -1 + 6 - (-3) = 8 dB に抑える
-	CHECK(auto_limiter_ceiling_db() == -1.0f);
+	CHECK(near(g2, 8.0f, 0.05f));              // 目標は +9 dB だが、上限 -1 + 6 - (-3) = 8 dB に抑える
+	CHECK(auto_limiter_ceiling_db() == -3.0f); // リミッターの基準は -3 dB
+	// 基準の -3 dB なら、ゲインの上限は -3 + 6 - (-3) = +6 dB（-1 dB のときより 2 dB 控えめ）
+	CHECK(near(auto_gain_db(peaky, off, auto_limiter_ceiling_db()), 6.0f, 0.05f));
 
 	// すでに大きい人はゲインを下げる（範囲内）
 	Measurement loud;
@@ -364,6 +366,42 @@ void test_input_gain()
 	CHECK(!input_too_quiet(low));
 }
 
+void test_target_lufs()
+{
+	// 目標の音量はスライダーの範囲（-18〜-14）に収める。数値でなければ標準（-18）
+	CHECK(clamp_target_lufs(-30.0f) == -18.0f);
+	CHECK(clamp_target_lufs(-5.0f) == -14.0f);
+	CHECK(clamp_target_lufs(-16.0f) == -16.0f);
+	CHECK(clamp_target_lufs(NAN) == kTargetLufs);
+
+	// 目標を 1 dB 上げるごとに、出力ゲインも 1 dB 上がる（-18 → -14 で +4 dB）
+	Measurement m;
+	m.speech_level_db = -38.0f;
+	m.speech_lufs = -35.0f;
+	m.peak_db = -24.0f;
+	const CompState off{false, 0.0f, 1.0f};
+	float prev = auto_gain_db(m, off, -1.0f, -18.0f);
+	for (int t = -17; t <= -14; ++t) {
+		const float g = auto_gain_db(m, off, -1.0f, static_cast<float>(t));
+		CHECK(near(g - prev, 1.0f, 1e-3f));
+		prev = g;
+	}
+
+	// 音割れ防止で目標まで上げられないときは、capped が true
+	bool capped = true;
+	auto_gain_db(m, off, -1.0f, -18.0f, &capped);
+	CHECK(!capped); // 余裕がある
+	Measurement peaky;
+	peaky.speech_level_db = -30.0f;
+	peaky.speech_lufs = -27.0f;
+	peaky.peak_db = -3.0f;
+	auto_gain_db(peaky, off, -1.0f, -18.0f, &capped);
+	CHECK(capped); // 目標は +9 dB だが、上限は +8 dB
+	auto_gain_db(peaky, off, -1.0f, -14.0f, &capped);
+	CHECK(capped);
+	CHECK(near(auto_gain_db(peaky, off, -1.0f, -14.0f), 8.0f, 0.05f));
+}
+
 void test_measured_bands_follow_voice()
 {
 	// 3 kHz の声: 明瞭さの帯域が強い → EQ はこもりを抜かず、高域を少し抑える
@@ -397,6 +435,7 @@ int main()
 	test_auto_settings();
 	test_auto_filters();
 	test_input_gain();
+	test_target_lufs();
 	test_measured_bands_follow_voice();
 	return vao_test::finish();
 }

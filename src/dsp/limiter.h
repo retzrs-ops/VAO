@@ -31,8 +31,8 @@ public:
 private:
 	float sample_rate_ = 48000.0f;
 	bool enabled_ = true;
-	float ceiling_db_ = -1.0f;
-	float ceiling_ = 0.8912509f;
+	float ceiling_db_ = -3.0f;
+	float ceiling_ = 0.70794576f;
 	float release_k_ = 0.0f;
 
 	std::size_t lookahead_ = 0;

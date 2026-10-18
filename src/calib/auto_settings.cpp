@@ -4,6 +4,7 @@
 #include "auto_settings.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace vao::calib {
 
@@ -15,7 +16,8 @@ CompSettings auto_comp(const Measurement &m)
 	return c;
 }
 
-float auto_gain_db(const Measurement &m, const CompState &comp, float limiter_ceiling_db, float target_lufs)
+float auto_gain_db(const Measurement &m, const CompState &comp, float limiter_ceiling_db, float target_lufs,
+		   bool *capped)
 {
 	float avg_reduction = 0.0f;
 	float peak_after = m.peak_db;
@@ -28,8 +30,18 @@ float auto_gain_db(const Measurement &m, const CompState &comp, float limiter_ce
 
 	float gain = target_lufs - (m.speech_lufs - avg_reduction);
 	// 大声のピークがリミッターで潰れすぎない範囲に抑える
-	gain = std::min(gain, limiter_ceiling_db + kMaxLimiterReductionDb - peak_after);
+	const float limit = limiter_ceiling_db + kMaxLimiterReductionDb - peak_after;
+	if (capped != nullptr)
+		*capped = limit < gain - 0.05f;
+	gain = std::min(gain, limit);
 	return std::clamp(gain, kGainMinDb, kGainMaxDb);
+}
+
+float clamp_target_lufs(float target_lufs)
+{
+	if (std::isnan(target_lufs))
+		return kTargetLufs;
+	return std::clamp(target_lufs, kTargetLufsMin, kTargetLufsMax);
 }
 
 float auto_limiter_ceiling_db()

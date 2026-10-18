@@ -58,7 +58,7 @@ struct vao_filter {
 	std::atomic<float> gain_db{0.0f};
 	std::atomic<float> comp_threshold_db{-20.0f};
 	std::atomic<float> comp_ratio{3.0f};
-	std::atomic<float> lim_ceiling_db{-1.0f};
+	std::atomic<float> lim_ceiling_db{-3.0f};
 
 	// 音声スレッドだけが触る
 	vao::dsp::Gain in_gain;
@@ -75,9 +75,14 @@ struct vao_filter {
 	Measurer meas;
 	std::mutex mutex; // 下の3つを守る。音声スレッドでは使わない
 	Measurement last;
-	bool pending = false; // 測定が終わったら自動設定を実行する
+	bool pending = false;         // 測定が終わったら自動設定を実行する
+	bool has_measurement = false; // 測定済みか（目標の音量を変えたとき、出力ゲインを合わせ直せるか）
 
-	int applied_preset = 0; // EQ スライダーに反映済みのプリセット（UI スレッドだけが触る）
+	int applied_preset = 0;                         // EQ スライダーに反映済みのプリセット（UI スレッドだけが触る）
+	float applied_target = vao::calib::kTargetLufs; // 出力ゲインに反映済みの目標の音量（UI スレッドだけが触る）
+	std::atomic<bool> last_gain_capped{false};      // 直前の自動設定で、音割れ防止のため目標まで上げられなかったか
+	std::atomic<bool> target_dirty{false};          // 「目標の音量」を動かして、まだ出力ゲインに反映していない
+	std::atomic<float> target_idle_sec{0.0f};       // 最後に動かしてからの時間（動かし終わるのを待つため）
 
 	// 画面に出した状態（同じ表示を繰り返し更新しないため）
 	std::atomic<int> shown_phase{-1};
@@ -126,6 +131,53 @@ void set_status(vao_filter *f, const std::string &text)
 	obs_source_update(f->source, settings);
 	obs_data_release(settings);
 	obs_source_update_properties(f->source);
+}
+
+// ---- 測定結果の保存・読み込み ----
+
+// 最後の測定結果を、設定（シーンに保存される）に残す。OBS を再起動しても、
+// 「目標の音量」を動かして、出力ゲインを合わせ直せるようにするため。
+void save_measurement(obs_data_t *s, const Measurement &m)
+{
+	obs_data_t *o = obs_data_create();
+	obs_data_set_double(o, "noise_floor_db", m.noise_floor_db);
+	obs_data_set_double(o, "keyboard_level_db", m.keyboard_level_db);
+	obs_data_set_double(o, "mouse_level_db", m.mouse_level_db);
+	obs_data_set_double(o, "speech_level_db", m.speech_level_db);
+	obs_data_set_double(o, "speech_lufs", m.speech_lufs);
+	obs_data_set_double(o, "peak_db", m.peak_db);
+	obs_data_set_bool(o, "clipped", m.clipped);
+	obs_data_set_double(o, "band_low_db", m.band_low_db);
+	obs_data_set_double(o, "band_mud_db", m.band_mud_db);
+	obs_data_set_double(o, "band_pres_db", m.band_pres_db);
+	obs_data_set_double(o, "band_sib_db", m.band_sib_db);
+	obs_data_set_obj(s, VAO_KEY_LAST_MEASUREMENT, o);
+	obs_data_release(o);
+}
+
+bool load_measurement(obs_data_t *s, Measurement &m)
+{
+	if (!obs_data_has_user_value(s, VAO_KEY_LAST_MEASUREMENT))
+		return false;
+	obs_data_t *o = obs_data_get_obj(s, VAO_KEY_LAST_MEASUREMENT);
+	if (o == nullptr)
+		return false;
+	const bool ok = obs_data_has_user_value(o, "speech_lufs");
+	if (ok) {
+		m.noise_floor_db = static_cast<float>(obs_data_get_double(o, "noise_floor_db"));
+		m.keyboard_level_db = static_cast<float>(obs_data_get_double(o, "keyboard_level_db"));
+		m.mouse_level_db = static_cast<float>(obs_data_get_double(o, "mouse_level_db"));
+		m.speech_level_db = static_cast<float>(obs_data_get_double(o, "speech_level_db"));
+		m.speech_lufs = static_cast<float>(obs_data_get_double(o, "speech_lufs"));
+		m.peak_db = static_cast<float>(obs_data_get_double(o, "peak_db"));
+		m.clipped = obs_data_get_bool(o, "clipped");
+		m.band_low_db = static_cast<float>(obs_data_get_double(o, "band_low_db"));
+		m.band_mud_db = static_cast<float>(obs_data_get_double(o, "band_mud_db"));
+		m.band_pres_db = static_cast<float>(obs_data_get_double(o, "band_pres_db"));
+		m.band_sib_db = static_cast<float>(obs_data_get_double(o, "band_sib_db"));
+	}
+	obs_data_release(o);
+	return ok;
 }
 
 // ---- 自動設定を設定に書き込む ----
@@ -183,7 +235,13 @@ void apply_auto_settings(vao_filter *f)
 	cs.threshold_db = c.threshold_db;
 	cs.ratio = c.ratio;
 	obs_data_set_bool(s, VAO_KEY_GAIN_ON, true);
-	obs_data_set_double(s, VAO_KEY_GAIN_DB, vao::calib::auto_gain_db(m, cs, ceiling));
+	// 仕上がりの音量の目標（画面のスライダー。-18 雑談向け 〜 -14 ゲーム向け）
+	const float target =
+		vao::calib::clamp_target_lufs(static_cast<float>(obs_data_get_int(s, VAO_KEY_TARGET_LUFS)));
+	bool capped = false;
+	obs_data_set_double(s, VAO_KEY_GAIN_DB, vao::calib::auto_gain_db(m, cs, ceiling, target, &capped));
+	f->applied_target = target;
+	f->last_gain_capped = capped;
 
 	f->applied_preset = preset;
 	obs_source_update(f->source, s);
@@ -207,8 +265,14 @@ void finish_measurement(vao_filter *f)
 	{
 		std::lock_guard<std::mutex> lock(f->mutex);
 		f->last = m;
+		f->has_measurement = true;
 		apply = f->pending;
 		f->pending = false;
+	}
+	{
+		obs_data_t *saved = obs_source_get_settings(f->source);
+		save_measurement(saved, m);
+		obs_data_release(saved);
 	}
 	if (apply)
 		apply_auto_settings(f);
@@ -226,7 +290,72 @@ void finish_measurement(vao_filter *f)
 		text += "\n";
 		text += obs_module_text(VAO_TEXT_STATUS_LOW_INPUT);
 	}
+	if (apply && f->last_gain_capped.load()) {
+		text += "\n";
+		text += obs_module_text(VAO_TEXT_STATUS_GAIN_CAPPED);
+	}
 	set_status(f, text);
+}
+
+// 「目標の音量」を動かし終わってから、出力ゲインを合わせ直すまでの待ち時間（秒）。
+// 動かしている最中に画面を作り直すと、つかんでいるスライダーが消えて動かせなくなるため、待つ。
+constexpr float kTargetSettleSec = 0.5f;
+
+// 「目標の音量」に合わせて、出力ゲインを計算し直す（測定済みのとき）。測定がまだなら、目標だけを覚える。
+// 描画スレッドから呼ぶ。最後に画面を 1 回だけ更新する。
+void apply_target_change(vao_filter *f)
+{
+	obs_data_t *s = obs_source_get_settings(f->source);
+	const float target =
+		vao::calib::clamp_target_lufs(static_cast<float>(obs_data_get_int(s, VAO_KEY_TARGET_LUFS)));
+	if (target == f->applied_target) {
+		obs_data_release(s);
+		return;
+	}
+	f->applied_target = target;
+
+	Measurement m;
+	bool have;
+	{
+		std::lock_guard<std::mutex> lock(f->mutex);
+		m = f->last;
+		have = f->has_measurement;
+	}
+
+	char buf[512];
+	std::string text;
+	if (!have) {
+		std::snprintf(buf, sizeof(buf), obs_module_text(VAO_TEXT_STATUS_TARGET_SAVED),
+			      static_cast<int>(target));
+		text = buf;
+	} else {
+		// いまの画面の設定（入力ゲイン・コンプ・リミッター）を前提に、出力ゲインだけを計算し直す
+		const float in_gain = obs_data_get_bool(s, VAO_KEY_IN_GAIN_ON)
+					      ? static_cast<float>(obs_data_get_double(s, VAO_KEY_IN_GAIN_DB))
+					      : 0.0f;
+		m = vao::calib::shift_levels(m, in_gain);
+		vao::calib::CompState cs;
+		cs.enabled = obs_data_get_bool(s, VAO_KEY_COMP_ON);
+		cs.threshold_db = static_cast<float>(obs_data_get_double(s, VAO_KEY_COMP_THRESHOLD));
+		cs.ratio = static_cast<float>(obs_data_get_double(s, VAO_KEY_COMP_RATIO));
+		const float ceiling = static_cast<float>(obs_data_get_double(s, VAO_KEY_LIM_CEILING));
+		bool capped = false;
+		const float gain = vao::calib::auto_gain_db(m, cs, ceiling, target, &capped);
+		obs_data_set_bool(s, VAO_KEY_GAIN_ON, true);
+		obs_data_set_double(s, VAO_KEY_GAIN_DB, gain);
+
+		std::snprintf(buf, sizeof(buf), obs_module_text(VAO_TEXT_STATUS_TARGET_APPLIED),
+			      static_cast<int>(target), static_cast<double>(gain));
+		text = buf;
+		if (capped) {
+			text += "\n";
+			text += obs_module_text(VAO_TEXT_STATUS_GAIN_CAPPED);
+		}
+	}
+	obs_data_set_string(s, VAO_KEY_STATUS, text.c_str());
+	obs_source_update(f->source, s); // 音声処理側にも渡す
+	obs_data_release(s);
+	obs_source_update_properties(f->source); // 画面を 1 回だけ更新する
 }
 
 constexpr int kShownDisabled = 100; // shown_phase に入れる、Measurer::Phase と重ならない値
@@ -239,6 +368,20 @@ void vao_tick(void *data, float seconds)
 	int remaining = f->meas.remaining_sec();
 	if (p == Measurer::Phase::Starting)
 		remaining = Measurer::kSilenceSec;
+
+	// 「目標の音量」を動かし終わって少したったら、出力ゲインを合わせ直す（測定中は待つ）
+	if (f->target_dirty.load()) {
+		if (measuring(f)) {
+			f->target_idle_sec = 0.0f;
+		} else {
+			const float idle = f->target_idle_sec.load() + seconds;
+			f->target_idle_sec = idle;
+			if (idle >= kTargetSettleSec) {
+				f->target_dirty = false;
+				apply_target_change(f);
+			}
+		}
+	}
 
 	// 測定中なのに進まない理由を画面に出す（フィルターがオフ、または音が来ていない）
 	if (measuring(f)) {
@@ -362,11 +505,12 @@ void vao_defaults(obs_data_t *s)
 	obs_data_set_default_double(s, VAO_KEY_DEESS_THRESHOLD, -40.0);
 	obs_data_set_default_bool(s, VAO_KEY_GAIN_ON, true);
 	obs_data_set_default_double(s, VAO_KEY_GAIN_DB, 0.0);
+	obs_data_set_default_int(s, VAO_KEY_TARGET_LUFS, -18);
 	obs_data_set_default_bool(s, VAO_KEY_COMP_ON, false);
 	obs_data_set_default_double(s, VAO_KEY_COMP_THRESHOLD, -20.0);
 	obs_data_set_default_double(s, VAO_KEY_COMP_RATIO, 3.0);
 	obs_data_set_default_bool(s, VAO_KEY_LIM_ON, true);
-	obs_data_set_default_double(s, VAO_KEY_LIM_CEILING, -1.0);
+	obs_data_set_default_double(s, VAO_KEY_LIM_CEILING, -3.0);
 }
 
 void *vao_create(obs_data_t *settings, obs_source_t *source)
@@ -391,6 +535,15 @@ void *vao_create(obs_data_t *settings, obs_source_t *source)
 	obs_data_set_string(settings, VAO_KEY_STATUS, obs_module_text(VAO_TEXT_STATUS_IDLE));
 	vao_update(f, settings);
 	f->applied_preset = static_cast<int>(obs_data_get_int(settings, VAO_KEY_EQ_PRESET));
+	f->applied_target =
+		vao::calib::clamp_target_lufs(static_cast<float>(obs_data_get_int(settings, VAO_KEY_TARGET_LUFS)));
+
+	// 前回の測定結果が保存されていれば読み込む（再起動後も、目標の音量を動かして出力ゲインを合わせ直せる）
+	Measurement saved;
+	if (load_measurement(settings, saved)) {
+		f->last = saved;
+		f->has_measurement = true;
+	}
 
 	obs_add_tick_callback(vao_tick, f);
 	return f;
@@ -417,7 +570,24 @@ bool eq_preset_changed(void *priv, obs_properties_t *, obs_property_t *, obs_dat
 	obs_data_set_double(settings, VAO_KEY_EQ_MUD, g.mud_db);
 	obs_data_set_double(settings, VAO_KEY_EQ_PRES, g.pres_db);
 	obs_data_set_double(settings, VAO_KEY_EQ_AIR, g.air_db);
+	// OBS は、設定を音声処理側に渡したあとでこの関数を呼ぶ。ここで書き換えた値も、音声処理側に渡し直す
+	vao_update(f, settings);
 	return true;
+}
+
+// 「目標の音量」のスライダーを動かしたことを覚えるだけ。ここでは設定も画面も変えない。
+// 値が変わるたびに画面を作り直すと、つかんでいるスライダーが消えて動かせなくなる。
+// 動かし終わって少したってから、vao_tick が出力ゲインを合わせ直す（apply_target_change）。
+bool target_lufs_changed(void *priv, obs_properties_t *, obs_property_t *, obs_data_t *settings)
+{
+	auto *f = static_cast<vao_filter *>(priv);
+	const float target =
+		vao::calib::clamp_target_lufs(static_cast<float>(obs_data_get_int(settings, VAO_KEY_TARGET_LUFS)));
+	if (target == f->applied_target)
+		return false;
+	f->target_idle_sec = 0.0f;
+	f->target_dirty = true;
+	return false;
 }
 
 obs_property_t *add_db_slider(obs_properties_t *props, const char *key, const char *text_key, double min, double max,
@@ -434,6 +604,17 @@ obs_properties_t *vao_properties(void *data)
 
 	obs_properties_add_text(props, VAO_KEY_STATUS, obs_module_text(VAO_TEXT_STATUS_LABEL), OBS_TEXT_INFO);
 	obs_properties_add_button(props, VAO_BTN_AUTO_ALL, obs_module_text(VAO_TEXT_AUTO_ALL), cb_auto_all);
+
+	// 目標の音量は、いちばん触る設定なので、自動設定ボタンの真下に置く（グループの外）。
+	// OBS の画面は項目が縦 1 列に並ぶため、ボタンの右側には置けない。
+	obs_property_t *target = obs_properties_add_int_slider(props, VAO_KEY_TARGET_LUFS,
+							       obs_module_text(VAO_TEXT_TARGET_LUFS),
+							       static_cast<int>(vao::calib::kTargetLufsMin),
+							       static_cast<int>(vao::calib::kTargetLufsMax), 1);
+	obs_property_int_set_suffix(target, " LUFS");
+	// 項目名が長いと、OBS の画面は「項目名の列」が広がって、上のボタンまで右にずれる。名前は短くして、説明は吹き出しに出す
+	obs_property_set_long_description(target, obs_module_text(VAO_TEXT_TARGET_LUFS_HELP));
+	obs_property_set_modified_callback2(target, target_lufs_changed, data);
 
 	// 各グループの見出しのチェックボックスがオンオフ。並びは処理の順番。
 	obs_properties_t *ingain = obs_properties_create_param(data, nullptr);
